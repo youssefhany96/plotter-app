@@ -1,10 +1,10 @@
 import React from 'react';
-import './ColumnList.css'; // Make sure to create and import the corresponding CSS file
+import './ColumnList.css';
 
-const ColumnList = ({ columns, onDragStart }) => {
+const ColumnList = ({ title, columns, onDragStart }) => {
   return (
     <div className='column-list'>
-      <div className='column-list-header'>Columns</div>
+      <div className='column-list-header'>{title}</div>
       {columns.map(column => (
         <div
           className='column-list-item'

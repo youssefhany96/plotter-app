@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
 import ColumnList from "./components/ColumnList/ColumnList";
-import DraggableBox from "./components/DraggableList/DraggableBox";
+import DraggableBox from "./components/DraggableBox/DraggableBox";
 import LineChart from "./components/LineChart";
+import { fetchColumns, fetchData } from "./api";
 
 import "./App.css";
 
@@ -11,8 +15,6 @@ function App() {
   const [selectedMeasures, setSelectedMeasures] = useState([]);
   const [chartData, setChartData] = useState({});
 
-  console.log('chartData', chartData)
-
   const handleDragStart = (e, column) => {
     e.dataTransfer.setData("text/plain", column.name);
     e.dataTransfer.effectAllowed = "move";
@@ -20,22 +22,26 @@ function App() {
 
   const handleDimensionDrop = (e) => {
     e.preventDefault();
-    const columnName = e.dataTransfer.getData('text');
-    const column = columns.find(col => col.name === columnName && col.function === 'dimension');
+    const columnName = e.dataTransfer.getData("text");
+    const column = columns.find(
+      (col) => col.name === columnName && col.function === "dimension"
+    );
     if (column) {
       setSelectedDimension(column.name);
+    } else {
+      toast.error("You can't drop a measure into the dimension box!");
     }
   };
 
   const handleMeasuresDrop = (e) => {
-    e.preventDefault();
-    const columnName = e.dataTransfer.getData('text');
-    const column = columns.find(col => col.name === columnName && col.function === 'measure');
+    const columnName = e.dataTransfer.getData("text");
+    const column = columns.find(
+      (col) => col.name === columnName && col.function === "measure"
+    );
     if (column) {
-      setSelectedMeasures(prevMeasures => {
-        // This ensures that we don't add duplicate measure names and also allows multiple measures
-        return [...new Set([...prevMeasures, column.name])];
-      });
+      setSelectedMeasures([column.name]);
+    } else {
+      toast.error("You can't drop a dimension into the measures box!");
     }
   };
 
@@ -43,64 +49,56 @@ function App() {
     e.preventDefault();
     // Logic to handle when a draggable item is over the DraggableBox
   };
-
   useEffect(() => {
-    const fetchColumns = async () => {
-      try {
-        const response = await fetch(
-          "https://plotter-task-8019e13a60ac.herokuapp.com/columns"
-        );
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setColumns(data.columns);
-      } catch (error) {
-        console.error("Fetching columns failed: ", error);
-      }
-    };
-
-    fetchColumns();
+    fetchColumns()
+      .then((data) => setColumns(data.columns))
+      .catch((error) => console.error("Fetching columns failed: ", error));
   }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (selectedDimension && selectedMeasures.length > 0) {
-        try {
-          const response = await fetch(
-            "https://plotter-task-8019e13a60ac.herokuapp.com/data",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                measures: selectedMeasures,
-                dimension: selectedDimension,
-              }),
-            }
+    if (selectedDimension && selectedMeasures.length > 0) {
+      fetchData(selectedDimension, selectedMeasures)
+        .then((result) => {
+          const transformedData = transformChartData(
+            result.data,
+            selectedDimension,
+            selectedMeasures
           );
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const result = await response.json();
-          setChartData(result.data);
-        } catch (error) {
-          console.error("Fetching data values failed: ", error);
-        }
-      }
-    };
-
-    fetchData();
+          setChartData(transformedData);
+        })
+        .catch((error) =>
+          console.error("Fetching data values failed: ", error)
+        );
+    }
   }, [selectedDimension, selectedMeasures]);
-  
+
+  const transformChartData = (data, dimension, measures) => {
+    const dimensionData = data.find((d) => d.name === dimension);
+    const measureData = data.filter((d) => measures.includes(d.name));
+
+    return dimensionData.values.map((dimValue, index) => {
+      const dataPoint = { [dimensionData.name]: dimValue };
+      measureData.forEach((measure) => {
+        dataPoint[measure.name] = measure.values[index];
+      });
+      return dataPoint;
+    });
+  };
 
   return (
     <div className="App">
+      <ToastContainer />
       <div className="Sidebar">
-        <ColumnList columns={columns} onDragStart={handleDragStart} />
+        <ColumnList
+          title="Dimensions"
+          columns={columns.filter((col) => col.function === "dimension")}
+          onDragStart={handleDragStart}
+        />
+        <ColumnList
+          title="Measures"
+          columns={columns.filter((col) => col.function === "measure")}
+          onDragStart={handleDragStart}
+        />
       </div>
       <div className="MainContent">
         <DraggableBox
@@ -108,6 +106,7 @@ function App() {
           onDrop={handleDimensionDrop}
           onDragOver={handleDragOver}
           onClear={() => setSelectedDimension(null)}
+          placeholder="Drag a dimension here"
         >
           {selectedDimension}
         </DraggableBox>
@@ -116,12 +115,17 @@ function App() {
           onDrop={handleMeasuresDrop}
           onDragOver={handleDragOver}
           onClear={() => setSelectedMeasures([])}
+          placeholder="Drag measures here"
         >
           {selectedMeasures.length ? selectedMeasures.join(", ") : null}
         </DraggableBox>
         <div className="ChartContainer">
           {selectedDimension && selectedMeasures.length > 0 && (
-            <LineChart data={chartData} />
+            <LineChart
+              data={chartData}
+              dimension={selectedDimension}
+              measures={selectedMeasures}
+            />
           )}
         </div>
       </div>
